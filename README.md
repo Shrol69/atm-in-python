@@ -33,7 +33,7 @@ Handles the user interface and interaction, providing a menu for different ATM o
 
 1. Clone the repository:
     ```bash
-    git clone https://github.com/yourusername/atm-console-app.git
+    git clone https://github.com/Shrol69/atm-in-python.git
     cd atm-console-app
     ```
 
