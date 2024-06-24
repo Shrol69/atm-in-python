@@ -1,3 +1,12 @@
+import sys
+from PyQt5.QtWidgets import (
+    QApplication, QWidget, QMainWindow, QLabel, QLineEdit, QPushButton, QTextEdit,
+    QVBoxLayout, QHBoxLayout, QMessageBox, QInputDialog, QSizePolicy, QAction
+)
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QFont, QIcon
+from functools import partial
+
 class User:
     def __init__(self, user_id, pin, balance=0):
         self.user_id = user_id
@@ -9,10 +18,10 @@ class User:
         return self.pin == pin
 
     def add_transaction(self, type, amount, recipient_id=None):
-        transaction = f"{type} of {amount}"
+        transaction = f"{type} of ${amount:.2f}"
         if recipient_id:
             transaction += f" to {recipient_id}"
-        transaction += f". Balance: {self.balance}"
+        transaction += f". Balance: ${self.balance:.2f}"
         self.transactions.append(transaction)
 
     def deposit(self, amount):
@@ -54,7 +63,7 @@ class ATM:
         self.current_user = None
 
     def show_balance(self):
-        return self.current_user.balance if self.current_user else None
+        return self.current_user.balance if self.current_user else 0
 
     def deposit(self, amount):
         if self.current_user:
@@ -89,80 +98,134 @@ class Bank:
         return self.users.get(user_id)
 
 
-class ATMApp:
+class ATMApp(QMainWindow):
     def __init__(self, bank):
+        super().__init__()
         self.atm = ATM(bank)
+        self.setWindowTitle("ATM Application")
+        self.setWindowIcon(QIcon('atm_icon.png'))  # Replace with your icon file
+        self.setGeometry(100, 100, 600, 500)
+        self.initUI()
 
-    def run(self):
-        while True:
-            print("Welcome to the ATM")
-            user_id = input("Enter your user ID: ")
-            pin = input("Enter your PIN: ")
-            if self.atm.authenticate_user(user_id, pin):
-                print("Authentication successful")
-                while True:
-                    print("\nATM Menu:")
-                    print("1. Transaction History")
-                    print("2. Withdraw")
-                    print("3. Deposit")
-                    print("4. Transfer")
-                    print("5. Quit")
-                    choice = input("Choose an option: ")
-                    if choice == '1':
-                        self.show_transaction_history()
-                    elif choice == '2':
-                        self.withdraw()
-                    elif choice == '3':
-                        self.deposit()
-                    elif choice == '4':
-                        self.transfer()
-                    elif choice == '5':
-                        self.quit()
-                        break
-                    else:
-                        print("Invalid choice. Please try again.")
-            else:
-                print("Authentication failed. Please try again.")
+    def initUI(self):
+        self.create_widgets()
+        self.create_layouts()
+
+    def create_widgets(self):
+        self.central_widget = QWidget(self)
+        self.setCentralWidget(self.central_widget)
+
+        self.label_balance = QLabel("Balance: $0.00", self)
+        self.label_balance.setFont(QFont('Arial', 14))
+
+        self.button_withdraw = QPushButton("Withdraw", self)
+        self.button_withdraw.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.button_withdraw.clicked.connect(self.withdraw_dialog)
+
+        self.button_deposit = QPushButton("Deposit", self)
+        self.button_deposit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.button_deposit.clicked.connect(self.deposit_dialog)
+
+        self.button_transfer = QPushButton("Transfer", self)
+        self.button_transfer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.button_transfer.clicked.connect(self.transfer_dialog)
+
+        self.button_logout = QPushButton("Logout", self)
+        self.button_logout.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.button_logout.clicked.connect(self.logout)
+
+        self.text_transaction_history = QTextEdit(self)
+        self.text_transaction_history.setReadOnly(True)
+
+    def create_layouts(self):
+        vbox = QVBoxLayout()
+        vbox.addWidget(self.label_balance)
+        vbox.addWidget(self.button_withdraw)
+        vbox.addWidget(self.button_deposit)
+        vbox.addWidget(self.button_transfer)
+        vbox.addWidget(self.button_logout)
+        vbox.addWidget(self.text_transaction_history)
+
+        self.central_widget.setLayout(vbox)
+
+    def authenticate_user(self):
+        user_id, ok = QInputDialog.getText(self, "Login", "Enter User ID:")
+        if ok:
+            pin, ok = QInputDialog.getText(self, "Login", "Enter PIN:", QLineEdit.Password)
+            if ok:
+                if self.atm.authenticate_user(user_id, pin):
+                    self.update_balance_label()
+                    self.show_transaction_history()
+                    return True
+                else:
+                    QMessageBox.warning(self, "Authentication Failed", "Invalid User ID or PIN")
+        return False
+
+    def update_balance_label(self):
+        balance = self.atm.show_balance()
+        self.label_balance.setText(f"Balance: ${balance:.2f}")
 
     def show_transaction_history(self):
+        self.text_transaction_history.clear()
         transactions = self.atm.get_transaction_history()
         if transactions:
-            print("Transaction History:")
             for transaction in transactions:
-                print(transaction)
+                self.text_transaction_history.append(transaction)
         else:
-            print("No transactions found.")
+            self.text_transaction_history.append("No transactions found.")
 
-    def withdraw(self):
-        amount = float(input("Enter amount to withdraw: "))
-        if self.atm.withdraw(amount):
-            print("Withdrawal successful.")
-        else:
-            print("Insufficient funds.")
+    def withdraw_dialog(self):
+        amount, ok = QInputDialog.getDouble(self, "Withdraw", "Enter amount to withdraw:", decimals=2)
+        if ok:
+            if self.atm.withdraw(amount):
+                QMessageBox.information(self, "Withdrawal", f"Withdrawal of ${amount:.2f} successful")
+                self.update_balance_label()
+                self.show_transaction_history()
+            else:
+                QMessageBox.warning(self, "Withdrawal Failed", "Insufficient funds")
 
-    def deposit(self):
-        amount = float(input("Enter amount to deposit: "))
-        if self.atm.deposit(amount):
-            print("Deposit successful.")
+    def deposit_dialog(self):
+        amount, ok = QInputDialog.getDouble(self, "Deposit", "Enter amount to deposit:", decimals=2)
+        if ok:
+            self.atm.deposit(amount)
+            QMessageBox.information(self, "Deposit", f"Deposit of ${amount:.2f} successful")
+            self.update_balance_label()
+            self.show_transaction_history()
 
-    def transfer(self):
-        recipient_id = input("Enter recipient user ID: ")
-        amount = float(input("Enter amount to transfer: "))
-        if self.atm.transfer(recipient_id, amount):
-            print("Transfer successful.")
-        else:
-            print("Transfer failed. Please check the details and try again.")
+    def transfer_dialog(self):
+        recipient_id, ok = QInputDialog.getText(self, "Transfer", "Enter recipient User ID:")
+        if ok:
+            amount, ok = QInputDialog.getDouble(self, "Transfer", "Enter amount to transfer:", decimals=2)
+            if ok:
+                if self.atm.transfer(recipient_id, amount):
+                    QMessageBox.information(self, "Transfer", f"Transfer of ${amount:.2f} to {recipient_id} successful")
+                    self.update_balance_label()
+                    self.show_transaction_history()
+                else:
+                    QMessageBox.warning(self, "Transfer Failed", "Transfer failed. Please check details.")
 
-    def quit(self):
+    def logout(self):
         self.atm.logout()
-        print("Logged out. Thank you for using the ATM.")
-        exit()
+        self.label_balance.setText("Balance: $0.00")
+        self.text_transaction_history.clear()
+        self.authenticate_user()
+
+    def closeEvent(self, event):
+        reply = QMessageBox.question(self, 'Exit Application', 'Are you sure you want to exit?',
+                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            event.accept()
+        else:
+            event.ignore()
 
 
-# Example U
 if __name__ == "__main__":
+    app = QApplication(sys.argv)
     bank = Bank()
     bank.add_user(User("user1", "1234", 1000))
     bank.add_user(User("user2", "2345", 2000))
     atm_app = ATMApp(bank)
-    atm_app.run()
+    atm_app.show()
+    if not atm_app.authenticate_user():
+        sys.exit()
+    sys.exit(app.exec_())
