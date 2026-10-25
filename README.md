@@ -1,30 +1,19 @@
-# Vanta City
+# Northstar Bank ATM
 
-A native desktop game built with Pygame. Explore a top-down open city, cruise in your car, collect cash, and take contracts to build your reputation. It runs as a windowed game; it is not a website.
+A desktop ATM simulator built with Python and PyQt5. The application supports demo account sign-in, balance viewing, cash deposits and withdrawals, transfers between accounts, transaction history, and session logout.
 
-## Run the game
+## Run
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
-python vanta_city_game.py
+python "atm_in _python.py"
 ```
 
-Press **Enter** on the title screen to play.
+## Demo accounts
 
-## Controls
+- Account ID: `user1` · PIN: `1234` · Starting balance: `$1,000`
+- Account ID: `user2` · PIN: `2345` · Starting balance: `$2,000`
 
-- **WASD**: walk; in the car use **W/S** for throttle/reverse and **A/D** to steer
-- **E** or **Space**: enter or exit your car
-- **Shift**: boost while driving
-- **Tab**: open contracts; press **1–5** to accept one
-- **Esc**: pause or resume
-- **F5**: save
-- **N**: start a new profile from the pause screen
-
-Progress saves to `~/.vanta_city_save.json`.
-
-## ATM demo
-
-The original PyQt ATM project is still included. Launch it with `python "atm_in _python.py"`.
+This is an in-memory learning demo. Account data and transactions reset when the program closes; do not use real account details or money.
