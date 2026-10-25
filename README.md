@@ -15,7 +15,7 @@ Press **Enter** on the title screen to play.
 
 ## Controls
 
-- **WASD**: walk or drive
+- **WASD**: walk; in the car use **W/S** for throttle/reverse and **A/D** to steer
 - **E** or **Space**: enter or exit your car
 - **Shift**: boost while driving
 - **Tab**: open contracts; press **1–5** to accept one

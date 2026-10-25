@@ -42,7 +42,7 @@ def save_game(state):
 
 def label(surface, text, pos, size=18, color=WHITE, font=None):
     font = font or pygame.font.Font(None, size)
-    surface.blit(font.render(str(text), True, color), pos)
+    surface.blit(font.render(str(text), True, color), (int(pos[0]), int(pos[1])))
 
 
 class Game:
@@ -56,16 +56,23 @@ class Game:
         self.small = pygame.font.Font(None, 18)
         self.state = "title"
         self.profile = load_save()
-        self.player = pygame.Vector2(540, 570)
+        # Spawn on the avenue that runs through the center of the illustrated map.
+        self.player = pygame.Vector2(1360, 640)
         self.camera = pygame.Vector2(0, 0)
         self.in_car = False
         self.speed = 0
-        self.car = pygame.Vector2(540, 650)
+        self.heading = 0
+        self.walk_clock = 0.0
+        self.car = pygame.Vector2(1385, 640)
+        map_path = Path(__file__).parent / "assets" / "vanta-city-map.png"
+        self.city_art = pygame.image.load(str(map_path)).convert()
+        self.city_art = pygame.transform.smoothscale(self.city_art, (WORLD_W, WORLD_H))
+        self.city_minimap = pygame.transform.smoothscale(self.city_art, (158, 118))
         self.active_job = None
         self.message = "Welcome to Vanta City. Your story starts here."
         self.message_time = 4
         self.cash_piles = [pygame.Vector2(x, y) for x, y in
-                           [(420, 690), (810, 520), (1190, 900), (1550, 610), (930, 1190), (1830, 1050)]]
+                           [(572, 359), (858, 359), (1144, 359), (1716, 359), (1360, 850), (1360, 937)]]
         self.park_rects = [pygame.Rect(900, 300, 210, 170), pygame.Rect(1450, 970, 270, 230), pygame.Rect(330, 1130, 190, 220)]
         self.buildings = []
         self._make_city()
@@ -76,10 +83,10 @@ class Game:
         # A readable street grid; blocks between broad avenues.
         for row in range(5):
             for col in range(7):
-                x, y = 150 + col * 285, 120 + row * 285
-                if any(r.colliderect(pygame.Rect(x, y, 205, 205)) for r in self.park_rects):
+                x, y = 72 + col * 285, 72 + row * 285
+                if any(r.colliderect(pygame.Rect(x, y, 190, 190)) for r in self.park_rects):
                     continue
-                self.buildings.append((pygame.Rect(x, y, 205, 205), rng.choice([
+                self.buildings.append((pygame.Rect(x, y, 190, 190), rng.choice([
                     (89, 102, 111), (125, 107, 87), (93, 100, 94), (116, 94, 81), (83, 103, 112)])))
 
     def notify(self, text):
@@ -92,35 +99,52 @@ class Game:
     def destination(self):
         if self.active_job is None:
             return None
-        return {"car": pygame.Vector2(1660, 390), "island": pygame.Vector2(1950, 1320),
-                "jet": pygame.Vector2(1720, 260), "yacht": pygame.Vector2(2100, 800),
-                "impact": pygame.Vector2(1100, 760)}[JOBS[self.active_job][3]]
+        return {"car": pygame.Vector2(1716, 359), "island": pygame.Vector2(1390, 1335),
+                "jet": pygame.Vector2(1716, 359), "yacht": pygame.Vector2(1980, 1280),
+                "impact": pygame.Vector2(810, 655)}[JOBS[self.active_job][3]]
 
     def can_move_to(self, pos, radius=14):
-        body = pygame.Rect(int(pos.x-radius), int(pos.y-radius), radius*2, radius*2)
-        return not any(body.colliderect(rect) for rect, _ in self.buildings)
+        if pos.x < radius or pos.y < radius or pos.x >= WORLD_W-radius or pos.y >= WORLD_H-radius:
+            return False
+        # The illustrated map doubles as a simple collision mask: dark neutral
+        # pixels are streets, while brighter roofs, parks and water are blocked.
+        px = int(pos.x * self.city_art.get_width() / WORLD_W)
+        py = int(pos.y * self.city_art.get_height() / WORLD_H)
+        red, green, blue, _ = self.city_art.get_at((px, py))
+        brightness = (red + green + blue) / 3
+        return max(red, green, blue) - min(red, green, blue) < 34 and 28 <= brightness <= 112
 
     def update(self, dt):
         keys = pygame.key.get_pressed()
-        move = pygame.Vector2(keys[pygame.K_d] - keys[pygame.K_a], keys[pygame.K_s] - keys[pygame.K_w])
+        # pygame's key states are bools; convert them before subtraction.
+        # bool - bool raises TypeError on Python 3, which stopped the game loop.
+        move = pygame.Vector2(
+            int(keys[pygame.K_d]) - int(keys[pygame.K_a]),
+            int(keys[pygame.K_s]) - int(keys[pygame.K_w]),
+        )
         if move.length_squared():
             move = move.normalize()
         if self.state == "play":
+            if not self.in_car and move.length_squared():
+                self.walk_clock += dt * 12
             if self.in_car:
                 accel = 420 if keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT] else 290
-                self.speed += move.y * accel * dt
-                self.speed *= max(0, 1 - dt * (1.5 if move.y else 3.2))
+                throttle = int(keys[pygame.K_w]) - int(keys[pygame.K_s])
+                steering = int(keys[pygame.K_d]) - int(keys[pygame.K_a])
+                self.speed += throttle * accel * dt
+                self.speed *= max(0, 1 - dt * (1.25 if throttle else 2.7))
                 self.speed = max(-130, min(440, self.speed))
-                direction = pygame.Vector2(move.x, 0)
-                proposed = self.car.copy()
-                proposed.x += direction.x * max(100, abs(self.speed)) * dt
-                proposed.y += self.speed * dt
+                if abs(self.speed) > 7:
+                    self.heading = (self.heading + steering * 118 * dt * (1 if self.speed >= 0 else -1)) % 360
+                angle = math.radians(self.heading)
+                direction = pygame.Vector2(math.sin(angle), -math.cos(angle))
+                proposed = self.car + direction * self.speed * dt
                 proposed.x = max(30, min(WORLD_W - 30, proposed.x))
                 proposed.y = max(30, min(WORLD_H - 30, proposed.y))
                 if self.can_move_to(proposed, 20):
                     self.car.update(proposed)
                 else:
-                    self.speed = 0
+                    self.speed *= -0.18
                 self.player.update(self.car)
             else:
                 proposed = self.player.copy()
@@ -157,56 +181,69 @@ class Game:
         self.notify(f"CONTRACT COMPLETE  •  {title}  •  +${reward:,}")
         self.active_job = None
 
+    def exit_car(self):
+        angle = math.radians(self.heading)
+        forward = pygame.Vector2(math.sin(angle), -math.cos(angle))
+        offsets = (forward * 48, -forward * 48, pygame.Vector2(48, 0), pygame.Vector2(-48, 0))
+        for offset in offsets:
+            candidate = self.car + offset
+            if self.can_move_to(candidate):
+                self.player.update(candidate)
+                self.in_car = False
+                self.speed = 0
+                return
+        self.notify("No safe place to get out here.")
+
     def draw_world(self):
         s = self.screen
         cam = self.camera
-        s.fill((58, 89, 76))
-        # Asphalt grid and pale lane markings
-        for x in range(0, WORLD_W, 285):
-            pygame.draw.rect(s, (43, 49, 54), (x - cam.x - 36, -cam.y, 72, HEIGHT + 2))
-            for y in range(0, WORLD_H, 48):
-                pygame.draw.line(s, (183, 168, 131), (x-cam.x, y-cam.y), (x-cam.x, y+22-cam.y), 2)
-        for y in range(0, WORLD_H, 285):
-            pygame.draw.rect(s, (43, 49, 54), (-cam.x, y - cam.y - 36, WIDTH + 2, 72))
-            for x in range(0, WORLD_W, 48):
-                pygame.draw.line(s, (183, 168, 131), (x-cam.x, y-cam.y), (x+22-cam.x, y-cam.y), 2)
-        for rect in self.park_rects:
-            r = rect.move(-cam.x, -cam.y)
-            pygame.draw.rect(s, (66, 111, 77), r, border_radius=14)
-            for x in range(r.left+24, r.right-12, 48):
-                for y in range(r.top+20, r.bottom-12, 48):
-                    pygame.draw.circle(s, (101, 143, 84), (x,y), 10)
-        for rect, color in self.buildings:
-            r = rect.move(-cam.x, -cam.y)
-            if r.right < 0 or r.left > WIDTH or r.bottom < 0 or r.top > HEIGHT:
-                continue
-            pygame.draw.rect(s, (22, 28, 32), r.move(9, 11), border_radius=5)
-            pygame.draw.rect(s, color, r, border_radius=5)
-            pygame.draw.rect(s, tuple(min(255, c+28) for c in color), (r.x+8,r.y+8,r.w-16,22), border_radius=3)
-            for wx in range(r.x+18, r.right-8, 30):
-                for wy in range(r.y+42,r.bottom-8,34):
-                    pygame.draw.rect(s, (208, 187, 131), (wx,wy,12,13), border_radius=2)
+        s.fill((8, 18, 24))
+        # The large illustrated city is the actual scrolling playfield.
+        s.blit(self.city_art, (-int(cam.x), -int(cam.y)))
         for pile in self.cash_piles:
             p = pile - cam
-            pygame.draw.circle(s, (15, 23, 20), p, 14)
-            pygame.draw.circle(s, GOLD, p, 10)
-            label(s, "$", (p.x-5,p.y-9), 17, DARK)
-        # Car is available from the start and has a clear silhouette.
+            center = (int(p.x), int(p.y))
+            pulse = 2 + int((pygame.time.get_ticks() // 160) % 3)
+            pygame.draw.circle(s, (255, 219, 143), center, 17 + pulse, 2)
+            pygame.draw.circle(s, (20, 23, 20), center, 13)
+            pygame.draw.circle(s, GOLD, center, 10)
+            label(s, "$", (center[0]-4, center[1]-8), 16, DARK)
+        # Player vehicle: rotate the metallic coupe along its driving heading.
         cp = self.car - cam
-        pygame.draw.rect(s, (17, 24, 30), (cp.x-24, cp.y-38, 48, 76), border_radius=12)
-        pygame.draw.rect(s, (199, 153, 83), (cp.x-19, cp.y-34, 38, 68), border_radius=10)
-        pygame.draw.rect(s, (64, 84, 91), (cp.x-14,cp.y-20,28,18),border_radius=5)
-        pygame.draw.rect(s, (64, 84, 91), (cp.x-14,cp.y+5,28,16),border_radius=5)
+        cp = (int(cp.x), int(cp.y))
+        car_image = pygame.Surface((58, 86), pygame.SRCALPHA)
+        pygame.draw.ellipse(car_image, (10, 14, 18), (3, 2, 52, 82))
+        pygame.draw.rect(car_image, (12, 17, 20), (4, 3, 50, 76), border_radius=15)
+        pygame.draw.rect(car_image, (177, 125, 67), (8, 6, 42, 70), border_radius=12)
+        pygame.draw.rect(car_image, (224, 184, 113), (13, 10, 32, 6), border_radius=3)
+        pygame.draw.rect(car_image, (38, 60, 70), (13, 20, 32, 18), border_radius=5)
+        pygame.draw.rect(car_image, (27, 42, 49), (13, 44, 32, 16), border_radius=5)
+        pygame.draw.line(car_image, (225, 199, 149), (29, 21), (29, 62), 2)
+        for wy in (18, 62):
+            pygame.draw.rect(car_image, (9, 12, 14), (0, wy, 7, 13), border_radius=3)
+            pygame.draw.rect(car_image, (9, 12, 14), (51, wy, 7, 13), border_radius=3)
+        rotated_car = pygame.transform.rotate(car_image, -self.heading)
+        s.blit(rotated_car, rotated_car.get_rect(center=cp))
         if not self.in_car:
             p = self.player - cam
-            pygame.draw.circle(s,(20,25,29),(p.x,p.y+13),13)
-            pygame.draw.circle(s,(232,194,143),(p.x,p.y-3),10)
-            pygame.draw.rect(s,(184,63,51),(p.x-9,p.y+2,18,20),border_radius=6)
+            px, py = int(p.x), int(p.y)
+            pressed = pygame.key.get_pressed()
+            moving = any(pressed[key] for key in (pygame.K_w, pygame.K_a, pygame.K_s, pygame.K_d))
+            stride = int(math.sin(self.walk_clock) * 3) if moving else 0
+            pygame.draw.ellipse(s, (13, 17, 18), (px-13, py+9, 26, 12))
+            pygame.draw.line(s, (30, 43, 49), (px-4, py+11), (px-5-stride, py+21), 4)
+            pygame.draw.line(s, (30, 43, 49), (px+4, py+11), (px+5+stride, py+21), 4)
+            pygame.draw.circle(s, (38, 47, 50), (px, py+7), 10)
+            pygame.draw.rect(s, (42, 91, 115), (px-10, py-2, 20, 19), border_radius=6)
+            pygame.draw.circle(s, (225, 180, 137), (px, py-8), 8)
+            pygame.draw.arc(s, (48, 34, 28), (px-8, py-15, 16, 12), 0, math.pi, 3)
         dest = self.destination()
         if dest:
             p = dest - cam
-            pygame.draw.circle(s, GOLD, p, 34, 3)
-            pygame.draw.circle(s, GOLD, p, 7)
+            center = (int(p.x), int(p.y))
+            pulse = 3 + int((pygame.time.get_ticks() // 180) % 5)
+            pygame.draw.circle(s, (255, 205, 111), center, 20 + pulse, 2)
+            pygame.draw.circle(s, (255, 205, 111), center, 5)
 
     def draw_hud(self):
         s = self.screen
@@ -217,9 +254,8 @@ class Game:
         # Compact city map
         box=pygame.Rect(WIDTH-188,18,170,130)
         pygame.draw.rect(s,(12,17,21),box,border_radius=9)
-        pygame.draw.rect(s,(55,68,69),box.inflate(-16,-16),border_radius=5)
-        for xx in range(box.x+25,box.right-10,29): pygame.draw.line(s,(102,110,105),(xx,box.y+12),(xx,box.bottom-12),2)
-        for yy in range(box.y+25,box.bottom-10,27): pygame.draw.line(s,(102,110,105),(box.x+10,yy),(box.right-10,yy),2)
+        s.blit(self.city_minimap, (box.x+6, box.y+6))
+        pygame.draw.rect(s,(12,17,21),box,2,border_radius=9)
         pp=(box.x+12+self.player.x/WORLD_W*(box.w-24),box.y+12+self.player.y/WORLD_H*(box.h-24))
         pygame.draw.circle(s,GOLD,(int(pp[0]),int(pp[1])),5)
         if self.destination():
@@ -300,14 +336,14 @@ class Game:
                 elif event.key==pygame.K_q: self.running=False
                 elif event.key==pygame.K_n:
                     self.profile={"cash":25000,"rep":0,"completed":[]}; save_game(self.profile)
-                    self.cash_piles=[pygame.Vector2(x,y) for x,y in [(420,690),(810,520),(1190,900),(1550,610),(930,1190),(1830,1050)]]
-                    self.active_job=None; self.in_car=False; self.player.update(540,570); self.car.update(540,650); self.state="play"
+                    self.cash_piles=[pygame.Vector2(x,y) for x,y in [(572,359),(858,359),(1144,359),(1716,359),(1360,850),(1360,937)]]
+                    self.active_job=None; self.in_car=False; self.speed=0; self.heading=0; self.player.update(1360,640); self.car.update(1385,640); self.state="play"
             elif self.state=="play":
                 if event.key==pygame.K_ESCAPE: self.state="pause"
                 elif event.key==pygame.K_TAB: self.state="contracts"
                 elif event.key in (pygame.K_e,pygame.K_SPACE):
                     if self.in_car:
-                        self.in_car=False; self.player.update(self.car.x+48,self.car.y); self.speed=0
+                        self.exit_car()
                     elif self.player.distance_to(self.car)<100:
                         self.in_car=True; self.player.update(self.car)
                     else: self.notify("Get close to your car to enter it.")
