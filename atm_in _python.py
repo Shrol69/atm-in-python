@@ -139,6 +139,7 @@ class ATMApp(QMainWindow):
         """)
         self.create_widgets()
         self.create_layouts()
+        self.set_session_controls(False)
 
     def create_widgets(self):
         self.central_widget = QWidget(self)
@@ -275,6 +276,7 @@ class ATMApp(QMainWindow):
                     self.screen_title.setText("Good day")
                     self.account_label.setText(f"ACCOUNT  ·  {user_id.upper()}")
                     self.status_label.setText("●  SESSION ACTIVE")
+                    self.set_session_controls(True)
                     self.update_balance_label()
                     self.show_transaction_history()
                     return True
@@ -330,9 +332,16 @@ class ATMApp(QMainWindow):
         self.label_balance.setText("$0.00")
         self.account_label.setText("ACCOUNT  ·  SIGN IN")
         self.screen_title.setText("Welcome")
-        self.status_label.setText("●  SECURE SESSION")
+        self.status_label.setText("●  INSERT CARD TO BEGIN")
         self.text_transaction_history.clear()
+        self.set_session_controls(False)
         self.authenticate_user()
+
+    def set_session_controls(self, enabled):
+        self.button_withdraw.setEnabled(enabled)
+        self.button_deposit.setEnabled(enabled)
+        self.button_transfer.setEnabled(enabled)
+        self.button_logout.setEnabled(enabled)
 
     def closeEvent(self, event):
         reply = QMessageBox.question(self, "End session", "Are you sure you want to close the ATM?",
