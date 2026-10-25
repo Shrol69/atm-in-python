@@ -155,7 +155,7 @@ class ATMApp(QMainWindow):
         self.brand_subtitle = QLabel("SELF SERVICE BANKING")
         self.brand_subtitle.setObjectName("brandSubtitle")
 
-        self.status_label = QLabel("●  SECURE SESSION")
+        self.status_label = QLabel("●  INSERT CARD TO BEGIN")
         self.status_label.setObjectName("status")
         self.status_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
