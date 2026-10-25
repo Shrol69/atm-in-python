@@ -1,56 +1,37 @@
-# ATM Console Application
+# Northstar Bank ATM Demo
 
-This is a simple console-based ATM application implemented in Python. The application allows users to perform basic banking operations such as viewing transaction history, withdrawing funds, depositing funds, and transferring funds to other users. The application includes user authentication through user ID and PIN.
+A small desktop ATM simulation built with Python and PyQt5. It provides demo sign-in, balance display, deposits, withdrawals, transfers, and a recent activity list.
 
-## Features
+## Requirements
 
-- User authentication with user ID and PIN
-- View transaction history
-- Withdraw funds
-- Deposit funds
-- Transfer funds to other users
-- Logout and exit the application
+- Python 3.9 or later
+- macOS, Windows, or Linux with a desktop session available
 
-## Class Design
+## Run on macOS or Linux
 
-### User
+From this project folder, create and activate a virtual environment, install the GUI dependency, and start the app:
 
-Manages user details, including their balance and transaction history.
+```sh
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python "atm_in _python.py"
+```
 
-### ATM
+## Run on Windows
 
-Handles user authentication and manages ATM functionalities such as showing balance, deposit, withdraw, transfer, and transaction history.
+```powershell
+py -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+python "atm_in _python.py"
+```
 
-### Bank
+The app opens a sign-in prompt when it starts. Use either demo account:
 
-Manages multiple users and provides a method to retrieve user details.
+| Account ID | PIN | Starting balance |
+| --- | --- | ---: |
+| `user1` | `1234` | $1,000.00 |
+| `user2` | `2345` | $2,000.00 |
 
-### ATMApp
-
-Handles the user interface and interaction, providing a menu for different ATM operations.
-
-## How to Run
-
-1. Clone the repository:
-    ```bash
-    git clone https://github.com/Shrol69/atm-in-python.git
-    cd atm-console-app
-    ```
-
-2. Run the application:
-    ```bash
-    python atm_app.py
-    ```
-
-## Example Usage
-
-```python
-if __name__ == "__main__":
-    # Create a bank and add some users
-    bank = Bank()
-    bank.add_user(User("user1", "1234", 1000))
-    bank.add_user(User("user2", "2345", 2000))
-
-    # Create and run the ATM application
-    atm_app = ATMApp(bank)
-    atm_app.run()
+This is a learning demo. Account data is kept in memory and resets when the app closes; the demo PINs are stored in the source code. Do not use it for real banking or real financial information.

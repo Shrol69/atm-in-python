@@ -1,10 +1,12 @@
 import sys
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QMainWindow, QLabel, QLineEdit, QPushButton, QTextEdit,
-    QVBoxLayout, QHBoxLayout, QGridLayout, QFrame, QMessageBox, QInputDialog, QSizePolicy
+    QVBoxLayout, QHBoxLayout, QFrame, QMessageBox, QInputDialog, QSizePolicy
 )
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
+
+
 class User:
     def __init__(self, user_id, pin, balance=0):
         self.user_id = user_id
