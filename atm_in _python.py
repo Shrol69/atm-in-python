@@ -2,9 +2,10 @@ import sys
 from pathlib import Path
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QMainWindow, QLabel, QLineEdit, QPushButton, QTextEdit,
-    QVBoxLayout, QHBoxLayout, QFrame, QMessageBox, QInputDialog, QSizePolicy
+    QVBoxLayout, QHBoxLayout, QFrame, QMessageBox, QInputDialog, QSizePolicy,
+    QProgressBar
 )
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont, QPixmap
 
 
@@ -63,7 +64,7 @@ class User:
         if not is_valid_amount(amount):
             return False
         amount = float(amount)
-        if amount > self.balance:
+        if amount % 100 != 0 or amount > self.balance:
             return False
         self.balance -= amount
         self.add_transaction("Withdraw", amount)
@@ -138,6 +139,8 @@ class ATMApp(QMainWindow):
     def __init__(self, bank):
         super().__init__()
         self.atm = ATM(bank)
+        self.language = "en"
+        self.dispense_amount = None
         self.setWindowTitle("Northstar Bank · ATM")
         self.setMinimumSize(1180, 760)
         self.resize(1460, 900)
@@ -182,10 +185,24 @@ class ATMApp(QMainWindow):
             QLineEdit:focus { border: 2px solid #24b89a; }
             QPushButton#loginButton { background: #16866e; border: 0; border-radius: 9px; color: white; font-size: 13px; font-weight: 700; padding: 12px; }
             QPushButton#loginButton:hover { background: #11745f; }
+            QPushButton#languageButton { background:#21364a; border:1px solid #385169; border-radius:8px; color:#dce8ef; padding:8px 11px; font-weight:700; }
+            QPushButton#languageButton:checked { background:#16866e; border-color:#16866e; color:white; }
+            QPushButton#quickCashButton { background:#e8f5f2; border:1px solid #b8ddd4; border-radius:10px; color:#126653; font-size:15px; font-weight:700; padding:12px 8px; }
+            QPushButton#quickCashButton:hover { background:#d6eee8; border-color:#24b89a; }
+            QPushButton#quickCashButton:disabled { color:#8b9ba3; background:#edf0f2; border-color:#dce3e7; }
+            QLabel#transactionStatus { color:#14745f; font-size:12px; font-weight:700; }
+            QProgressBar#cashProgress { border:0; border-radius:5px; background:#dce8e8; height:10px; text-align:center; }
+            QProgressBar#cashProgress::chunk { border-radius:5px; background:#24b89a; }
+            QFrame#featureCard { background:#e8f2f2; border:1px solid #d6e5e5; border-radius:11px; }
+            QLabel#featureIcon { color:#16866e; font-size:19px; font-weight:800; }
+            QLabel#featureTitle { color:#18384a; font-size:12px; font-weight:800; }
+            QLabel#featureCopy { color:#637987; font-size:10px; }
         """)
         self.create_widgets()
         self.create_layouts()
         self.set_session_controls(False)
+        self.set_language("en")
+        self.account_input.setFocus()
 
     def create_widgets(self):
         self.central_widget = QWidget(self)
@@ -230,6 +247,51 @@ class ATMApp(QMainWindow):
         self.button_transfer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.button_transfer.clicked.connect(self.transfer_dialog)
 
+        self.button_pin = QPushButton("⌑    CHANGE PIN")
+        self.button_pin.setObjectName("transferButton")
+        self.button_pin.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.button_pin.clicked.connect(self.change_pin_dialog)
+
+        self.language_english = QPushButton("EN")
+        self.language_english.setObjectName("languageButton")
+        self.language_english.setCheckable(True)
+        self.language_english.clicked.connect(lambda: self.set_language("en"))
+        self.language_hindi = QPushButton("हिन्दी")
+        self.language_hindi.setObjectName("languageButton")
+        self.language_hindi.setCheckable(True)
+        self.language_hindi.clicked.connect(lambda: self.set_language("hi"))
+
+        self.quick_cash_panel = QFrame()
+        self.quick_cash_panel.setStyleSheet("QFrame {background:#edf4f5;border:1px solid #d7e4e8;border-radius:12px;}")
+        quick_layout = QVBoxLayout(self.quick_cash_panel)
+        quick_layout.setContentsMargins(12, 9, 12, 10)
+        quick_layout.setSpacing(7)
+        self.quick_cash_heading = QLabel("QUICK CASH  ·  INSTANT DISPENSE")
+        self.quick_cash_heading.setObjectName("sectionTitle")
+        quick_layout.addWidget(self.quick_cash_heading)
+        quick_row = QHBoxLayout()
+        quick_row.setSpacing(8)
+        self.quick_cash_buttons = []
+        for amount in (500, 1000, 2000, 5000):
+            button = QPushButton(format_inr(amount).split(".")[0])
+            button.setObjectName("quickCashButton")
+            button.clicked.connect(lambda checked=False, value=amount: self.quick_withdraw(value))
+            self.quick_cash_buttons.append(button)
+            quick_row.addWidget(button)
+        quick_layout.addLayout(quick_row)
+        self.transaction_status = QLabel("")
+        self.transaction_status.setObjectName("transactionStatus")
+        self.cash_progress = QProgressBar()
+        self.cash_progress.setObjectName("cashProgress")
+        self.cash_progress.setRange(0, 100)
+        self.cash_progress.setValue(0)
+        self.cash_progress.setTextVisible(False)
+        self.dispense_timer = QTimer(self)
+        self.dispense_timer.setInterval(35)
+        self.dispense_timer.timeout.connect(self.advance_cash_dispense)
+
+        self.button_withdraw.setText("OTHER AMOUNT")
+
         self.login_panel = QFrame()
         self.login_panel.setObjectName("loginPanel")
         self.login_panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
@@ -247,6 +309,7 @@ class ATMApp(QMainWindow):
         self.pin_input.setPlaceholderText("4-digit ATM PIN")
         self.pin_input.setEchoMode(QLineEdit.Password)
         self.pin_input.setMaxLength(4)
+        self.account_input.returnPressed.connect(self.pin_input.setFocus)
         self.pin_input.returnPressed.connect(self.authenticate_user)
         self.login_button = QPushButton("INSERT CARD  ·  CONTINUE")
         self.login_button.setObjectName("loginButton")
@@ -259,6 +322,36 @@ class ATMApp(QMainWindow):
         login_layout.addWidget(self.pin_input)
         login_layout.addWidget(self.login_button)
         login_layout.addWidget(self.demo_hint)
+
+        self.welcome_strip = QWidget()
+        self.welcome_strip.setStyleSheet("background:transparent;")
+        self.welcome_strip.setMinimumHeight(112)
+        feature_row = QHBoxLayout(self.welcome_strip)
+        feature_row.setContentsMargins(0, 0, 0, 0)
+        feature_row.setSpacing(9)
+        self.features = []
+        initial_features = [
+            ("24×7", "Always ready", "Bank on your time"),
+            ("₹", "Made for India", "Clear rupee balances"),
+            ("EN  हिं", "Your language", "English or हिन्दी"),
+        ]
+        for icon, title, copy in initial_features:
+            card = QFrame()
+            card.setObjectName("featureCard")
+            card_layout = QVBoxLayout(card)
+            card_layout.setContentsMargins(12, 8, 10, 8)
+            card_layout.setSpacing(3)
+            icon_label = QLabel(icon)
+            icon_label.setObjectName("featureIcon")
+            title_label = QLabel(title)
+            title_label.setObjectName("featureTitle")
+            copy_label = QLabel(copy)
+            copy_label.setObjectName("featureCopy")
+            card_layout.addWidget(icon_label)
+            card_layout.addWidget(title_label)
+            card_layout.addWidget(copy_label)
+            feature_row.addWidget(card, 1)
+            self.features.append((title_label, copy_label))
 
         self.machine_visual = QLabel()
         self.machine_visual.setObjectName("machineVisual")
@@ -313,6 +406,8 @@ class ATMApp(QMainWindow):
         brand_copy.addWidget(self.brand_subtitle)
         header.addLayout(brand_copy)
         header.addStretch(1)
+        header.addWidget(self.language_english)
+        header.addWidget(self.language_hindi)
         header.addWidget(self.status_label)
         shell.addLayout(header)
 
@@ -327,6 +422,7 @@ class ATMApp(QMainWindow):
         greeting.addStretch(1)
         greeting.addWidget(self.account_label)
         screen_layout.addLayout(greeting)
+        screen_layout.addWidget(self.welcome_strip)
         screen_layout.addWidget(self.login_panel)
 
         balance_card = QFrame()
@@ -340,6 +436,10 @@ class ATMApp(QMainWindow):
         balance_layout.addWidget(self.label_balance)
         screen_layout.addWidget(balance_card)
 
+        screen_layout.addWidget(self.quick_cash_panel)
+        screen_layout.addWidget(self.transaction_status)
+        screen_layout.addWidget(self.cash_progress)
+
         action_heading = QLabel("SELECT A TRANSACTION")
         action_heading.setObjectName("sectionTitle")
         screen_layout.addWidget(action_heading)
@@ -351,6 +451,7 @@ class ATMApp(QMainWindow):
         actions.addWidget(self.button_withdraw)
         actions.addWidget(self.button_deposit)
         actions.addWidget(self.button_transfer)
+        actions.addWidget(self.button_pin)
         screen_layout.addWidget(self.actions_panel)
 
         history_heading = QLabel("RECENT ACCOUNT ACTIVITY")
@@ -361,6 +462,7 @@ class ATMApp(QMainWindow):
         self.balance_card = balance_card
         self.action_heading = action_heading
         self.history_heading = history_heading
+        self.balance_caption = caption
 
         shell.addWidget(screen, 1)
 
@@ -383,6 +485,8 @@ class ATMApp(QMainWindow):
             self.pin_input.clear()
             self.update_balance_label()
             self.show_transaction_history()
+            self.set_quick_cash_availability()
+            self.set_language(self.language)
             return True
         QMessageBox.warning(self, "Card verification failed", "The account number or PIN was not recognised.")
         return False
@@ -404,6 +508,9 @@ class ATMApp(QMainWindow):
         if ok:
             if not is_valid_amount(amount):
                 QMessageBox.warning(self, "Withdrawal declined", "Please enter a positive amount.")
+                return
+            if amount % 100 != 0:
+                QMessageBox.warning(self, "Withdrawal declined", "Cash withdrawals must be in multiples of ₹100.")
                 return
             if self.atm.withdraw(amount):
                 QMessageBox.information(self, "Withdrawal complete", f"{format_inr(amount)} withdrawal approved.")
@@ -445,6 +552,8 @@ class ATMApp(QMainWindow):
                     QMessageBox.warning(self, "Transfer declined", "Please check the recipient, balance, and session.")
 
     def logout(self):
+        self.dispense_timer.stop()
+        self.dispense_amount = None
         self.atm.logout()
         self.label_balance.setText("₹0.00")
         self.account_label.setText("INDIA  ·  CUSTOMER LOGIN")
@@ -454,19 +563,135 @@ class ATMApp(QMainWindow):
         self.pin_input.clear()
         self.text_transaction_history.clear()
         self.set_session_controls(False)
+        self.set_language(self.language)
 
     def set_session_controls(self, enabled):
         self.button_withdraw.setEnabled(enabled)
         self.button_deposit.setEnabled(enabled)
         self.button_transfer.setEnabled(enabled)
+        self.button_pin.setEnabled(enabled)
         self.button_logout.setEnabled(enabled)
         self.button_logout.setVisible(enabled)
         self.login_panel.setVisible(not enabled)
+        self.welcome_strip.setVisible(not enabled)
         self.balance_card.setVisible(enabled)
         self.action_heading.setVisible(enabled)
         self.actions_panel.setVisible(enabled)
         self.history_heading.setVisible(enabled)
         self.text_transaction_history.setVisible(enabled)
+        self.quick_cash_panel.setVisible(enabled)
+        self.transaction_status.setVisible(False)
+        self.cash_progress.setVisible(False)
+        for button in self.quick_cash_buttons:
+            button.setEnabled(enabled)
+
+    def set_language(self, language):
+        self.language = language
+        self.language_english.setChecked(language == "en")
+        self.language_hindi.setChecked(language == "hi")
+        hindi = language == "hi"
+        self.screen_title.setText("नमस्ते" if hindi else "Namaste")
+        self.account_label.setText(
+            (f"खाता  ·  {self.atm.current_user.user_id.upper()}" if self.atm.current_user else "भारत  ·  ग्राहक लॉगिन")
+            if hindi else
+            (f"ACCOUNT  ·  {self.atm.current_user.user_id.upper()}" if self.atm.current_user else "INDIA  ·  CUSTOMER LOGIN")
+        )
+        self.login_heading.setText("नॉर्थस्टार बैंक में आपका स्वागत है" if hindi else "Welcome to Northstar Bank")
+        self.login_prompt.setText("अपना खाता नंबर और 4 अंकों का PIN डालें।" if hindi else "नमस्ते  ·  Enter your account number and 4-digit PIN to begin.")
+        self.account_input.setPlaceholderText("खाता नंबर" if hindi else "Account number  (demo: user1 or user2)")
+        self.pin_input.setPlaceholderText("4 अंकों का ATM PIN" if hindi else "4-digit ATM PIN")
+        self.login_button.setText("कार्ड डालें  ·  आगे बढ़ें" if hindi else "INSERT CARD  ·  CONTINUE")
+        feature_text = (
+            [("हमेशा तैयार", "आपके समय पर बैंकिंग"), ("भारत के लिए", "रुपये में साफ हिसाब"), ("अपनी भाषा", "English या हिन्दी")]
+            if hindi else
+            [("Always ready", "Bank on your time"), ("Made for India", "Clear rupee balances"), ("Your language", "English or हिन्दी")]
+        )
+        for (title_label, copy_label), (title, copy) in zip(self.features, feature_text):
+            title_label.setText(title)
+            copy_label.setText(copy)
+        self.brand_subtitle.setText("एटीएम  •  नकद  •  ट्रांसफर" if hindi else "ATM  •  CASH  •  TRANSFERS")
+        self.balance_caption.setText("उपलब्ध राशि" if hindi else "AVAILABLE BALANCE")
+        self.quick_cash_heading.setText("तुरंत नकद  ·  QUICK CASH" if hindi else "QUICK CASH  ·  INSTANT DISPENSE")
+        self.action_heading.setText("लेनदेन चुनें" if hindi else "SELECT A TRANSACTION")
+        self.history_heading.setText("हाल की गतिविधि" if hindi else "RECENT ACCOUNT ACTIVITY")
+        self.button_withdraw.setText("अन्य राशि" if hindi else "OTHER AMOUNT")
+        self.button_deposit.setText("जमा करें" if hindi else "+    DEPOSIT FUNDS")
+        self.button_transfer.setText("ट्रांसफर" if hindi else "↗    TRANSFER")
+        self.button_pin.setText("PIN बदलें" if hindi else "⌑    CHANGE PIN")
+        self.button_logout.setText("सत्र समाप्त" if hindi else "END SESSION")
+        self.footer_label.setText("कृपया अपना कार्ड, नकद और रसीद ले लें।" if hindi else "Please take your card, cash and receipt before leaving.")
+        self.status_label.setText(
+            ("●  सत्र सक्रिय" if hindi else "●  SESSION ACTIVE") if self.atm.current_user
+            else ("●  कार्ड तैयार  ·  सुरक्षित" if hindi else "●  CARD READY  ·  SECURE SESSION")
+        )
+
+    def quick_withdraw(self, amount):
+        if not self.atm.current_user:
+            return
+        if amount > self.atm.show_balance():
+            QMessageBox.warning(self, "Withdrawal declined", "Insufficient balance for this amount.")
+            return
+        self.dispense_amount = amount
+        self.cash_progress.setValue(0)
+        self.transaction_status.setText(f"Preparing {format_inr(amount)} …  कृपया प्रतीक्षा करें")
+        self.transaction_status.setVisible(True)
+        self.cash_progress.setVisible(True)
+        for action in (self.button_withdraw, self.button_deposit, self.button_transfer, self.button_pin, self.button_logout):
+            action.setEnabled(False)
+        for button in self.quick_cash_buttons:
+            button.setEnabled(False)
+        self.dispense_timer.start()
+
+    def advance_cash_dispense(self):
+        value = min(100, self.cash_progress.value() + 5)
+        self.cash_progress.setValue(value)
+        if value in (20, 45, 70):
+            stages = (
+                {20: "खाते की पुष्टि हो रही है…", 45: "नोट गिने जा रहे हैं…", 70: "नकद डिस्पेंसर खुल रहा है…"}
+                if self.language == "hi" else
+                {20: "Verifying account…", 45: "Counting banknotes…", 70: "Opening cash dispenser…"}
+            )
+            self.transaction_status.setText(stages[value])
+        if value >= 100:
+            self.dispense_timer.stop()
+            amount = self.dispense_amount
+            self.dispense_amount = None
+            if self.atm.withdraw(amount):
+                self.update_balance_label()
+                self.show_transaction_history()
+                self.transaction_status.setText(
+                    f"✓  {format_inr(amount)} तैयार है। कृपया नकद ले लें।" if self.language == "hi"
+                    else f"✓  {format_inr(amount)} ready. Please collect your cash."
+                )
+            else:
+                self.transaction_status.setText("Withdrawal declined. Please check the balance.")
+            self.set_quick_cash_availability()
+            for action in (self.button_withdraw, self.button_deposit, self.button_transfer, self.button_pin, self.button_logout):
+                action.setEnabled(True)
+
+    def set_quick_cash_availability(self):
+        balance = self.atm.show_balance()
+        for button, amount in zip(self.quick_cash_buttons, (500, 1000, 2000, 5000)):
+            button.setEnabled(self.atm.current_user is not None and balance >= amount)
+
+    def change_pin_dialog(self):
+        user = self.atm.current_user
+        if not user:
+            return
+        current, ok = QInputDialog.getText(self, "Change ATM PIN", "Enter current 4-digit PIN:", QLineEdit.Password)
+        if not ok:
+            return
+        if not user.verify_pin(current):
+            QMessageBox.warning(self, "PIN not changed", "The current PIN is incorrect.")
+            return
+        new_pin, ok = QInputDialog.getText(self, "Change ATM PIN", "Enter a new 4-digit PIN:", QLineEdit.Password)
+        if not ok:
+            return
+        if len(new_pin) != 4 or not new_pin.isdigit():
+            QMessageBox.warning(self, "PIN not changed", "Choose exactly 4 digits.")
+            return
+        user.pin = new_pin
+        QMessageBox.information(self, "PIN updated", "Your demo ATM PIN has been changed.")
 
     def closeEvent(self, event):
         reply = QMessageBox.question(self, "End session", "Are you sure you want to close the ATM?",

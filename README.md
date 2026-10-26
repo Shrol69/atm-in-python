@@ -1,6 +1,6 @@
-# Northstar Bank ATM
+# Northstar Smart ATM
 
-A desktop ATM simulator built with Python and PyQt5. The application supports demo account sign-in, balance viewing, cash deposits and withdrawals, transfers between accounts, transaction history, and session logout.
+A native PyQt desktop ATM simulator inspired by Indian self-service banking. The interface pairs a 3D ATM render with a bilingual English/Hindi kiosk, Indian rupee formatting, masked PIN entry, quick cash presets with a dispense sequence, deposits, transfers, PIN changes, and a mini statement.
 
 ## Run
 
@@ -13,7 +13,9 @@ python "atm_in _python.py"
 
 ## Demo accounts
 
-- Account ID: `user1` · PIN: `1234` · Starting balance: `$1,000`
-- Account ID: `user2` · PIN: `2345` · Starting balance: `$2,000`
+- Account `user1` · PIN `1234` · balance `₹1,000`
+- Account `user2` · PIN `2345` · balance `₹2,000`
 
-This is an in-memory learning demo. Account data and transactions reset when the program closes; do not use real account details or money.
+Use **EN / हिन्दी** at the top to switch languages. Quick cash offers ₹500, ₹1,000, ₹2,000, and ₹5,000; available choices depend on the account balance. Custom cash withdrawals use ₹100 increments.
+
+This is an in-memory learning simulation. Accounts and transactions reset when the app closes. It does not connect to a bank or handle real money.
